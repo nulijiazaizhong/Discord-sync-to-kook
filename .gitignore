@@ -1,0 +1,38 @@
+# Python缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
+# 环境变量文件（包含敏感信息）
+.env
+
+# 下载的媒体文件
+downloads/
+
+# 日志文件
+*.log
+
+# IDE相关文件
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.bak
+*.backup
+
+# 编译文件
+*.so
+*.dll
+*.exe

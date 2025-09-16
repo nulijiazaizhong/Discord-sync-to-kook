@@ -1,0 +1,9 @@
+version: '3'
+
+services:
+  bot:
+    build: .
+    volumes:
+      - ./.env:/app/.env
+      - ./downloads:/app/downloads
+    restart: unless-stopped
