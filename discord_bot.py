@@ -3,13 +3,24 @@ from discord.ext import commands
 from discord import app_commands
 import os
 from message_forwarder import MessageForwarder
+from steam_monitor import SteamMonitor
 
-def create_discord_bot(token):
+def create_discord_bot(token, config=None):
     """创建Discord机器人实例"""
     # 创建机器人实例，设置命令前缀和权限
     intents = discord.Intents.default()
     intents.message_content = True  # 启用消息内容权限
     bot = commands.Bot(command_prefix='/', intents=intents)
+    
+    # 检查是否启用Steam监控
+    enable_steam = os.getenv('ENABLE_STEAM_MONITOR', 'true').lower() == 'true'
+    if enable_steam:
+        # 获取Steam检查间隔
+        steam_interval = int(os.getenv('STEAM_CHECK_INTERVAL', '30'))
+        # 初始化Steam监控
+        bot.steam_monitor = SteamMonitor({"interval_minutes": steam_interval})
+    else:
+        bot.steam_monitor = None
     
     return bot
 
@@ -30,14 +41,131 @@ def setup_discord_bot(bot, token, kook_bot=None):
         try:
             synced = await bot.tree.sync()
             print(f'同步了 {len(synced)} 个斜杠命令')
+            # 打印所有同步的斜杠命令
+            print('【Discord可用斜杠命令】:')
+            for cmd in synced:
+                print(f'  /{cmd.name} - {cmd.description}')
+            print('------')
             # 启动定期清理任务
             if forwarder:
                 bot.loop.create_task(forwarder._run_periodic_cleanup())
                 print('📤 定期清理任务已启动')
+            
+            # 初始化Steam监控（如果启用）
+            if bot.steam_monitor:
+                await bot.steam_monitor.initialize()
+                print('🎮 Steam游戏价格监控已初始化')
+            else:
+                print('📢 Steam游戏价格监控已禁用')
+            
+            # 启动Steam价格变动检查任务
+            bot.loop.create_task(run_price_check(bot))
+            print('🔍 Steam价格变动检查任务已启动')
         except Exception as e:
             print('Discord机器人启动时发生错误')
             print(f'错误: {e}')
         print('------')
+        
+    # Steam价格变动检查任务
+    async def run_price_check(bot):
+        """定期检查Steam游戏价格变动并发送通知"""
+        import asyncio
+        while True:
+            try:
+                # 每30分钟检查一次价格变动
+                await asyncio.sleep(30 * 60)
+                # 检查价格变动并发送通知
+                await bot.steam_monitor.check_price_changes()
+            except Exception as e:
+                print(f"Steam价格检查任务出错: {e}")
+                await asyncio.sleep(60)  # 出错后等待1分钟再重试
+
+    # Steam命令组
+    steam_group = app_commands.Group(name="steam", description="Steam游戏价格监控相关命令")
+    
+    @steam_group.command(name="add", description="添加游戏到Steam价格监控列表")
+    async def steam_add(interaction: discord.Interaction, game: str):
+        """添加游戏到Steam价格监控列表"""
+        await interaction.response.defer(ephemeral=True)
+        
+        # 检查Steam监控是否启用
+        if not bot.steam_monitor:
+            await interaction.followup.send("Steam游戏价格监控功能已禁用，请在配置文件中启用")
+            return
+        
+        # 检查是否为数字ID
+        if game.isdigit():
+            game_id = game
+            # 从Steam获取游戏名称
+            game_name = await bot.steam_monitor.get_game_name_by_id(game_id)
+            if game_name:
+                # 添加游戏到监控列表
+                success = await bot.steam_monitor.add_game(game_id)
+                if success:
+                    await interaction.followup.send(f"已添加游戏 {game_name} (ID: {game_id}) 到价格监控列表")
+                else:
+                    await interaction.followup.send(f"添加游戏 {game_name} (ID: {game_id}) 失败，可能已在监控列表中")
+            else:
+                await interaction.followup.send(f"未找到ID为 {game_id} 的游戏，请检查ID是否正确")
+        else:
+            # 尝试添加游戏名称
+            success = await bot.steam_monitor.add_game(game)
+            if success:
+                await interaction.followup.send(f"已添加游戏 {game} 到价格监控列表")
+            else:
+                await interaction.followup.send(f"添加游戏 {game} 失败，可能已在监控列表中或未找到该游戏")
+    
+    @steam_group.command(name="remove", description="从Steam价格监控列表中移除游戏")
+    async def steam_remove(interaction: discord.Interaction, game: str):
+        """从Steam价格监控列表中移除游戏"""
+        await interaction.response.defer(ephemeral=True)
+        
+        # 检查Steam监控是否启用
+        if not bot.steam_monitor:
+            await interaction.followup.send("Steam游戏价格监控功能已禁用，请在配置文件中启用")
+            return
+        
+        # 检查是否为数字ID
+        if game.isdigit():
+            game_id = game
+            # 从Steam获取游戏名称
+            game_name = await bot.steam_monitor.get_game_name_by_id(game_id)
+            if game_name:
+                # 从监控列表中移除游戏
+                success = await bot.steam_monitor.remove_game(game_id)
+                if success:
+                    await interaction.followup.send(f"已从价格监控列表中移除游戏 {game_name} (ID: {game_id})")
+                else:
+                    await interaction.followup.send(f"移除游戏 {game_name} (ID: {game_id}) 失败，可能不在监控列表中")
+            else:
+                await interaction.followup.send(f"未找到ID为 {game_id} 的游戏，请检查ID是否正确")
+        else:
+            # 尝试移除游戏名称
+            success = await bot.steam_monitor.remove_game(game)
+            if success:
+                await interaction.followup.send(f"已从价格监控列表中移除游戏 {game}")
+            else:
+                await interaction.followup.send(f"移除游戏 {game} 失败，可能不在监控列表中或未找到该游戏")
+    
+    @steam_group.command(name="list", description="列出当前监控的Steam游戏")
+    async def steam_list(interaction: discord.Interaction):
+        """列出当前监控的Steam游戏"""
+        await interaction.response.defer(ephemeral=True)
+        
+        # 检查Steam监控是否启用
+        if not bot.steam_monitor:
+            await interaction.followup.send("Steam游戏价格监控功能已禁用，请在配置文件中启用")
+            return
+        
+        games = await bot.steam_monitor.get_monitored_games()
+        if games:
+            game_list = "\n".join([f"- {game['name']} (ID: {game['id']})" for game in games])
+            await interaction.followup.send(f"当前监控的游戏列表：\n{game_list}")
+        else:
+            await interaction.followup.send("当前没有监控任何游戏")
+    
+    # 添加Steam命令组到机器人
+    bot.tree.add_command(steam_group)
 
     # 当有新消息时触发
     @bot.event

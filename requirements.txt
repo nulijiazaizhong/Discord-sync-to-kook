@@ -1,4 +1,4 @@
-﻿aiohappyeyeballs==2.6.1
+aiohappyeyeballs==2.6.1
 aiohttp==3.12.15
 aiosignal==1.4.0
 attrs==25.3.0
@@ -18,3 +18,7 @@ baidu-aip==4.16.10
 youdao-python==0.1
 cryptography==41.0.3
 requests==2.31.0
+# Steam监控依赖
+aiofiles==23.2.1
+APScheduler==3.10.1
+rapidfuzz==3.0.0

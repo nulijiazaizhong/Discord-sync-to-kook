@@ -10,6 +10,12 @@ from cleanup import get_cleanup_service
 # 加载环境变量
 load_dotenv()
 
+# 获取平台启用配置
+ENABLE_DISCORD = os.getenv('ENABLE_DISCORD', 'true').lower() == 'true'
+ENABLE_KOOK = os.getenv('ENABLE_KOOK', 'true').lower() == 'true'
+ENABLE_STEAM_MONITOR = os.getenv('ENABLE_STEAM_MONITOR', 'true').lower() == 'true'
+STEAM_CHECK_INTERVAL = int(os.getenv('STEAM_CHECK_INTERVAL', '30'))
+
 # 全局变量存储机器人实例
 kook_bot_instance = None
 discord_bot_instance = None
@@ -59,7 +65,7 @@ def run_kook_bot():
         print(f'KOOK机器人启动失败: {e}')
 
 def main():
-    """主函数，同时启动两个机器人"""
+    """主函数，根据配置启动所需功能"""
     print('=== 多平台机器人启动器（带转发功能）===')
     print('正在检查配置...')
     
@@ -77,15 +83,24 @@ def main():
     discord_token = os.getenv('DISCORD_BOT_TOKEN')
     kook_token = os.getenv('KOOK_BOT_TOKEN')
     
+    # 检查平台启用状态
+    if not ENABLE_DISCORD:
+        print('📢 Discord平台已禁用')
+        discord_token = None
+    
+    if not ENABLE_KOOK:
+        print('📢 KOOK平台已禁用')
+        kook_token = None
+    
     if not discord_token and not kook_token:
-        print('错误: 未找到任何机器人Token配置')
-        print('请在.env文件中配置DISCORD_BOT_TOKEN和/或KOOK_BOT_TOKEN')
+        print('错误: 未找到任何可用的机器人Token配置或所有平台均已禁用')
+        print('请在.env文件中配置DISCORD_BOT_TOKEN和/或KOOK_BOT_TOKEN，并确保至少启用一个平台')
         return
     
     threads = []
     
     # 先启动KOOK机器人（为了获取实例）
-    if kook_token:
+    if kook_token and ENABLE_KOOK:
         kook_thread = threading.Thread(target=run_kook_bot, daemon=True)
         kook_thread.start()
         threads.append(kook_thread)
@@ -102,7 +117,7 @@ def main():
         print('------')
     
     # 启动Discord机器人（传递KOOK机器人实例）
-    if discord_token:
+    if discord_token and ENABLE_DISCORD:
         discord_thread = threading.Thread(target=lambda: run_discord_bot(kook_bot_instance), daemon=True)
         discord_thread.start()
         threads.append(discord_thread)

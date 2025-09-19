@@ -14,6 +14,7 @@ ENV/
 # 下载的媒体文件
 downloads/
 khl.py-main/
+steam/
 
 # 日志文件
 *.log

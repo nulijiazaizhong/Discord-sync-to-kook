@@ -5,33 +5,23 @@ from khl import Bot, Message, Event, EventTypes
 from khl.card import CardMessage, Card, Module, Element, Types, Struct
 from khl.command import Command
 import os
+from steam_monitor import SteamMonitor
 
-def create_kook_bot(token):
+def create_kook_bot(token, config=None):
     """创建KOOK机器人实例"""
+    # 创建机器人实例
     bot = Bot(token=token)
     
-    # 猴子补丁：重写requester的request方法以避免超时上下文管理器错误
-    original_request = bot.client.gate.requester.request
+    # 检查是否启用Steam监控
+    enable_steam_monitor = os.getenv("ENABLE_STEAM_MONITOR", "true").lower() == "true"
     
-    async def patched_request(self, method, route, **params):
-        """修补的请求方法，确保HTTP客户端session存在"""
-        import aiohttp
-        from khl.requester import API
-        
-        # 移除timeout参数
-        if 'timeout' in params:
-            del params['timeout']
-        
-        # 确保HTTP客户端session存在
-        if not hasattr(self, '_cs') or self._cs is None:
-            self._cs = aiohttp.ClientSession()
-        
-        async with self._cs.request(method, f'{API}/{route}', **params) as res:
-            return await res.json()
-    
-    # 绑定修补的方法
-    import types
-    bot.client.gate.requester.request = types.MethodType(patched_request, bot.client.gate.requester)
+    # 初始化Steam监控（如果启用）
+    if enable_steam_monitor:
+        bot.steam_monitor = SteamMonitor({})
+        print("Steam游戏价格监控已启用")
+    else:
+        bot.steam_monitor = None
+        print("Steam游戏价格监控已禁用")
     
     # 直接输出KOOK机器人信息
     print("KOOK机器人已创建，准备设置命令...")
@@ -46,8 +36,163 @@ def setup_kook_bot(bot):
         print(f'KOOK机器人已成功启动！')
         print('------')
         
+        # 初始化Steam监控（如果启用）
+        if bot.steam_monitor:
+            asyncio.create_task(bot.steam_monitor.initialize())
+            print('Steam游戏价格监控已初始化')
+        else:
+            print('Steam游戏价格监控已禁用')
+        
         # 强制输出命令列表
         print('【KOOK可用文本命令】:')
+        
+    # 添加Steam游戏价格监控相关命令
+    @bot.command(name='steam', desc='Steam游戏价格监控')
+    async def steam_command(msg: Message, action='help', *args):
+        print(f"[KOOK] 执行Steam命令: /steam {action} {' '.join(args)}")
+        print(f"  - 用户: {msg.author.nickname} (ID: {msg.author.id})")
+        print(f"  - 频道: {msg.ctx.channel.name} (ID: {msg.ctx.channel.id})")
+        """Steam游戏价格监控
+        参数:
+            action: 操作类型 (add/remove/list/help)
+            args: 游戏名称
+        """
+        # 检查Steam监控是否启用
+        if not bot.steam_monitor:
+            await msg.reply("Steam游戏价格监控功能已禁用，请在配置文件中启用")
+            return
+        if action == 'add' and args:
+            game_input = ' '.join(args)
+            # 检查是否为数字ID
+            if game_input.isdigit():
+                game_id = game_input
+                # 从Steam获取游戏名称
+                game_name = await bot.steam_monitor.get_game_name_by_id(game_id)
+                if game_name:
+                    await msg.reply(f"已添加游戏 {game_name} (ID: {game_id}) 到价格监控列表")
+                else:
+                    await msg.reply(f"未找到ID为 {game_id} 的游戏，请检查ID是否正确")
+            else:
+                game_name = game_input
+                await msg.reply(f"已添加游戏 {game_name} 到价格监控列表")
+        elif action == 'remove' and args:
+            game_input = ' '.join(args)
+            # 检查是否为数字ID
+            if game_input.isdigit():
+                game_id = game_input
+                # 从Steam获取游戏名称
+                game_name = await bot.steam_monitor.get_game_name_by_id(game_id)
+                if game_name:
+                    await msg.reply(f"已从价格监控列表中移除游戏 {game_name} (ID: {game_id})")
+                else:
+                    await msg.reply(f"未找到ID为 {game_id} 的游戏，请检查ID是否正确")
+            else:
+                game_name = game_input
+                await msg.reply(f"已从价格监控列表中移除游戏 {game_name}")
+        elif action == 'list':
+            await msg.reply("当前监控的游戏列表：\n- Euro Truck Simulator 2\n- 其他游戏将在这里显示")
+        else:
+            help_text = "Steam游戏价格监控命令使用方法：\n"
+            help_text += "/steam add [游戏名称或ID] - 添加游戏到价格监控\n"
+            help_text += "/steam remove [游戏名称或ID] - 从价格监控中移除游戏\n"
+            help_text += "/steam list - 查看当前监控的游戏列表"
+            await msg.reply(help_text)
+        user_id = msg.author.id
+        channel_id = msg.ctx.channel.id
+        
+        if action == 'help':
+            help_card = CardMessage(Card(
+                Module.Header('Steam游戏价格监控帮助'),
+                Module.Section('使用以下命令管理Steam游戏价格监控:'),
+                Module.Section('/steam add [游戏名称] - 添加游戏到监控列表'),
+                Module.Section('/steam remove [游戏名称] - 从监控列表移除游戏'),
+                Module.Section('/steam list - 查看当前监控的游戏列表'),
+                Module.Section('/steam help - 显示此帮助信息')
+            ))
+            await msg.reply(help_card)
+            return
+            
+        elif action == 'add':
+            if not args:
+                await msg.reply('请提供游戏名称')
+                return
+                
+            game_name = ' '.join(args)
+            success, message, game_info = await bot.steam_monitor.add_monitor(user_id, channel_id, game_name)
+            
+            if success and game_info:
+                # 创建成功添加的卡片
+                card = CardMessage(Card(
+                    Module.Header('游戏监控添加成功'),
+                    Module.Section(f'已添加 **{game_info["name"]}** 到监控列表'),
+                    Module.Divider(),
+                    Module.Section(f'当前价格: **{game_info["last_price"]} {game_info["currency"]}**'),
+                    Module.Section(f'当前折扣: **{game_info["last_discount"]}%**'),
+                    Module.Context(f'游戏ID: {game_info["appid"]}'),
+                    Module.Divider(),
+                    Module.Section('价格变动时将自动通知')
+                ))
+                await msg.reply(card)
+            else:
+                await msg.reply(message)
+                
+        elif action == 'remove':
+            game_name = ' '.join(args) if args else ''
+            success, message = await bot.steam_monitor.remove_monitor(user_id, channel_id, game_name)
+            await msg.reply(message)
+            
+        elif action == 'list':
+            monitors = await bot.steam_monitor.list_monitors(user_id, channel_id)
+            
+            if not monitors:
+                await msg.reply('您当前没有监控任何游戏')
+                return
+                
+            # 创建游戏列表卡片
+            card = Card(Module.Header('您当前监控的游戏'))
+            
+            for game in monitors:
+                card.append(Module.Section(
+                    Element.Text(
+                        f'**{game["name"]}**\n价格: {game["last_price"]} {game["currency"]}\n折扣: {game["last_discount"]}%',
+                        Types.Text.KMD
+                    )
+                ))
+                card.append(Module.Context(f'游戏ID: {game["appid"]}'))
+                card.append(Module.Divider())
+                
+            await msg.reply(CardMessage(card))
+        
+        else:
+            await msg.reply(f'未知操作: {action}，请使用 /steam help 查看帮助')
+            
+    # 处理Steam价格变动通知
+    async def handle_price_changes():
+        """处理Steam价格变动并发送通知"""
+        try:
+            # 检查价格变动
+            price_changes = await bot.steam_monitor.run_monitor_prices()
+            
+            if not price_changes:
+                return
+                
+            # 发送通知
+            for change in price_changes:
+                channel_id = change['channel_id']
+                message = bot.steam_monitor.format_price_message(change)
+                
+                try:
+                    channel = await bot.client.fetch_public_channel(channel_id)
+                    await bot.send(channel, message)
+                except Exception as e:
+                    print(f"发送价格变动通知失败: {e}")
+        except Exception as e:
+            print(f"处理价格变动时出错: {e}")
+            
+    # 添加定时任务处理器
+    @bot.task.add_interval(minutes=30)
+    async def steam_price_check():
+        await handle_price_changes()
         print('  .ping - 测试机器人是否在线')
         print('  .hello - 问候命令')
         print('------')
@@ -259,7 +404,7 @@ def setup_kook_bot(bot):
     @bot.command(name='help')
     async def help_command(msg: Message):
         """显示所有可用命令"""
-        print(f"[KOOK] 执行文本命令: .help")
+        print(f"[KOOK] 执行文本命令: /help")
         print(f"  - 用户: {msg.author.username} (ID: {msg.author.id})")
         print(f"  - 频道: {msg.ctx.channel.name if hasattr(msg.ctx.channel, 'name') else '私聊'} (ID: {msg.ctx.channel.id})")
         
@@ -267,19 +412,30 @@ def setup_kook_bot(bot):
         help_text = "📚 **可用命令列表**\n\n"
         
         # 添加文本命令
-        help_text += "**文本命令：**\n"
+        help_text += "**KOOK平台命令：**\n"
         # 手动列出已知命令
         commands = {
             'ping': '测试机器人延迟',
             'hello': '向用户问好',
             'help': '显示所有可用命令',
-            'serverinfo': '显示服务器信息'
+            'serverinfo': '显示服务器信息',
+            'listening': '显示监听状态',
+            'steam': 'Steam游戏价格监控',
+            'status': '显示机器人状态',
+            'about': '关于本机器人'
         }
         for cmd_name, cmd_desc in commands.items():
-            help_text += f"`.{cmd_name}` - {cmd_desc}\n"
+            help_text += f"`/{cmd_name}` - {cmd_desc}\n"
+        
+        # 添加Steam命令详细说明
+        help_text += "\n**Steam命令详细用法：**\n"
+        help_text += "`/steam add [游戏名称]` - 添加游戏到监控列表\n"
+        help_text += "`/steam remove [游戏名称]` - 从监控列表移除游戏\n"
+        help_text += "`/steam list` - 查看当前监控的游戏列表\n"
+        help_text += "`/steam help` - 显示Steam命令帮助信息\n"
             
         # 添加命令处理信息
-        help_text += f"\n\n📊 **命令处理信息**:\n- 命令: .help\n- 状态: 成功\n- 显示了 {len(commands)} 个命令"
+        help_text += f"\n\n📊 **命令处理信息**:\n- 命令: /help\n- 状态: 成功\n- 显示了 {len(commands)} 个命令"
         
         # 使用直接API调用发送消息
         try:
@@ -330,9 +486,7 @@ def setup_kook_bot(bot):
         card = Card(
             Module.Header(f'{guild.name} 服务器信息'),
             Module.Section(
-                Element.Text(f'**服务器ID:** {guild.id}\n'
-                            f'**成员数量:** {guild.member_count}\n'
-                            f'**创建时间:** {guild.create_time.strftime("%Y-%m-%d")}',
+                Element.Text(f'**服务器ID:** {guild.id}',
                             Types.Text.KMD)
             )
         )
@@ -418,15 +572,20 @@ def setup_kook_bot(bot):
         card = Card(
             Module.Header('📚 帮助信息'),
             Module.Section(
-                Element.Text('**可用的斜杠命令:**\n'
+                Element.Text('**KOOK平台可用命令:**\n'
                             '`/help` - 显示此帮助信息\n'
                             '`/status` - 显示机器人状态\n'
-                            '`/about` - 关于本机器人\n\n'
-                            '**可用的文本命令:**\n'
-                            '`.ping` - 检查机器人延迟\n'
-                            '`.hello [名字]` - 问候命令\n'
-                            '`.serverinfo` - 显示服务器信息\n'
-                            '`.listening` - 显示监听状态',
+                            '`/about` - 关于本机器人\n'
+                            '`/ping` - 检查机器人延迟\n'
+                            '`/hello [名字]` - 问候命令\n'
+                            '`/serverinfo` - 显示服务器信息\n'
+                            '`/listening` - 显示监听状态\n'
+                            '`/steam` - Steam游戏价格监控\n\n'
+                            '**Steam命令详细用法:**\n'
+                            '`/steam add [游戏名称]` - 添加游戏到监控列表\n'
+                            '`/steam remove [游戏名称]` - 从监控列表移除游戏\n'
+                            '`/steam list` - 查看当前监控的游戏列表\n'
+                            '`/steam help` - 显示Steam命令帮助信息',
                             Types.Text.KMD)
             )
         )
