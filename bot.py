@@ -94,6 +94,12 @@ def main():
         # 等待KOOK机器人初始化
         import time
         time.sleep(3)
+        
+        # 直接输出KOOK可用命令
+        print('\n【KOOK可用文本命令】:')
+        print('  .ping - 测试机器人是否在线')
+        print('  .hello - 问候命令')
+        print('------')
     
     # 启动Discord机器人（传递KOOK机器人实例）
     if discord_token:

@@ -44,18 +44,33 @@ class MessageForwarder:
             if not kook_channel_id:
                 return False
             
+            print(f"🔄 正在转发消息到KOOK频道 {kook_channel_id}")
+            
             # 构建转发消息
             forwarded_content = await self._build_forward_message(discord_message)
             
-            # 发送文字消息
+            # 尝试直接通过KOOK机器人发送消息
+            success = False
             if forwarded_content:
-                await self._send_text_message(kook_channel_id, forwarded_content)
+                try:
+                    # 尝试获取频道对象
+                    channel = await self.kook_bot.client.fetch_public_channel(kook_channel_id)
+                    if channel:
+                        await channel.send(forwarded_content)
+                        print(f"✅ 直接通过KOOK机器人发送消息成功: {forwarded_content[:50]}...")
+                        success = True
+                except Exception as e:
+                    print(f"⚠️ 直接通过KOOK机器人发送消息失败，尝试API方法: {e}")
+                    # 如果直接发送失败，使用API方法
+                    await self._send_text_message(kook_channel_id, forwarded_content)
+                    success = True
             
             # 处理附件（图片、视频等）
             if discord_message.attachments:
                 await self._forward_attachments(discord_message, kook_channel_id)
+                success = True
             
-            return True
+            return success
             
         except Exception as e:
             print(f"转发消息失败: {e}")
@@ -139,6 +154,16 @@ class MessageForwarder:
             content: 消息内容
         """
         try:
+            # 尝试使用kook_bot对象发送消息
+            try:
+                channel = await self.kook_bot.client.fetch_public_channel(kook_channel_id)
+                if channel:
+                    await channel.send(content)
+                    print(f"✅ 使用kook_bot对象发送消息成功: {content[:50]}...")
+                    return
+            except Exception as e:
+                print(f"⚠️ 使用kook_bot对象发送消息失败，尝试直接API调用: {e}")
+            
             # 直接使用API发送消息
             import aiohttp
             import os
@@ -160,14 +185,27 @@ class MessageForwarder:
                 "type": 1  # 1表示文本消息
             }
             
-            # 发送请求
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data) as response:
-                    if response.status == 200:
-                        print(f"✅ 消息已转发到KOOK频道 {kook_channel_id}: {content[:50]}...")
-                    else:
-                        resp_json = await response.json()
-                        print(f"❌ 发送文字消息到KOOK失败: {resp_json}")
+            # 发送请求并添加重试机制
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(url, headers=headers, json=data) as response:
+                            resp_json = await response.json()
+                            if response.status == 200:
+                                print(f"✅ 消息已通过API转发到KOOK频道 {kook_channel_id}: {content[:50]}...")
+                                print(f"✅ API响应: {resp_json}")
+                                return
+                            else:
+                                print(f"⚠️ 尝试 {attempt+1}/{max_retries}: 发送文字消息到KOOK失败: {resp_json}")
+                                if attempt < max_retries - 1:
+                                    await asyncio.sleep(1)  # 等待1秒后重试
+                except Exception as inner_e:
+                    print(f"⚠️ 尝试 {attempt+1}/{max_retries}: API请求异常: {inner_e}")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(1)  # 等待1秒后重试
+            
+            print(f"❌ 所有尝试都失败，无法发送消息到KOOK频道 {kook_channel_id}")
         except Exception as e:
             print(f"❌ 发送文字消息到KOOK失败: {e}")
     
@@ -248,6 +286,17 @@ class MessageForwarder:
             original_filename: 原始文件名
         """
         try:
+            # 尝试使用kook_bot对象发送文件
+            try:
+                channel = await self.kook_bot.client.fetch_public_channel(kook_channel_id)
+                if channel:
+                    with open(file_path, 'rb') as f:
+                        await channel.send(file=f)
+                    print(f"✅ 使用kook_bot对象发送文件成功: {original_filename}")
+                    return
+            except Exception as e:
+                print(f"⚠️ 使用kook_bot对象发送文件失败，尝试直接API调用: {e}")
+            
             # 使用aiohttp直接调用KOOK API上传文件
             import os
             from dotenv import load_dotenv
