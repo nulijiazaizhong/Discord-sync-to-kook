@@ -114,32 +114,18 @@ class MessageForwarder:
         # 格式化消息
         if content:
             if translated_content:
-                # 使用新的转发样式（一行原文一行译文）
-                formatted_lines = []
-                original_lines = content.split('\n')
-                translated_lines = translated_content.split('\n')
+                # 使用段落样式（先显示所有原文，然后显示所有译文）
+                # 原文部分
+                original_content = content.strip()
                 
-                # 确保两个列表长度相同
-                max_length = max(len(original_lines), len(translated_lines))
-                original_lines.extend([''] * (max_length - len(original_lines)))
-                translated_lines.extend([''] * (max_length - len(translated_lines)))
+                # 译文部分（带表情符号）
+                translated_content = translated_content.strip()
+                if translated_content:
+                    formatted_content = f"{original_content}\n\n🔤 译文:\n{translated_content}"
+                else:
+                    formatted_content = original_content
                 
-                # 构建交替的原文/译文格式
-                for i in range(max_length):
-                    # 添加原文行
-                    formatted_lines.append(original_lines[i])
-                    
-                    # 添加译文行（带表情符号）
-                    if translated_lines[i].strip():
-                        formatted_lines.append(f"🔤 译文: {translated_lines[i]}")
-                    else:
-                        formatted_lines.append(f"🔤 译文: ")
-                    
-                    # 在每个段落后添加空行（除了最后一个段落）
-                    if i < max_length - 1:
-                        formatted_lines.append("")
-                
-                return f"{prefix} {author_name}:\n" + "\n".join(formatted_lines)
+                return f"{prefix} {author_name}:\n{formatted_content}"
             else:
                 # 没有翻译时的普通格式
                 return f"{prefix} {author_name}: {content}"
