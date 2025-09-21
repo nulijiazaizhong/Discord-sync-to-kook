@@ -66,6 +66,7 @@ class MessageForwarder:
                     success = True
             
             # 处理附件（图片、视频等）
+            # 注意：main.py中的AstrMessageEvent处理器也会处理视频附件，这里跳过视频处理以避免重复发送
             if discord_message.attachments:
                 await self._forward_attachments(discord_message, kook_channel_id)
                 success = True
@@ -204,6 +205,14 @@ class MessageForwarder:
         """
         for attachment in discord_message.attachments:
             try:
+                # 检查是否为视频文件，如果是则跳过（由main.py处理）
+                file_ext = os.path.splitext(attachment.filename)[1].lower()
+                video_extensions = {'.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv', '.m4v'}
+                
+                if file_ext in video_extensions:
+                    print(f"⏩ 跳过视频文件 {attachment.filename}，将由主处理器处理")
+                    continue
+                
                 # 下载附件
                 file_path = await self._download_attachment(attachment)
                 if file_path:
