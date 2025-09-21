@@ -1,6 +1,6 @@
 services:
   bot:
-    build: .
+    image: nulijiazaizhong/discord-sync-to-kook-bot:latest
     volumes:
       - ./.env:/app/.env
       - ./downloads:/app/downloads
