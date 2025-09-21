@@ -320,13 +320,20 @@ def setup_kook_bot(bot):
             }
             
             # 发送请求
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data) as response:
-                    if response.status == 200:
-                        print(f"✅ 消息已发送到KOOK频道 {channel_id}")
-                    else:
-                        resp_json = await response.json()
-                        print(f"❌ 发送消息到KOOK失败: {resp_json}")
+            # 使用超时设置，确保在任务内使用
+            timeout = aiohttp.ClientTimeout(total=30)  # 30秒超时
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                try:
+                    async with session.post(url, headers=headers, json=data) as response:
+                        if response.status == 200:
+                            print(f"✅ 消息已发送到KOOK频道 {channel_id}")
+                        else:
+                            resp_json = await response.json()
+                            print(f"❌ 发送消息到KOOK失败: {resp_json}")
+                except asyncio.TimeoutError:
+                    print(f"❌ 发送消息到KOOK超时")
+                except Exception as e:
+                    print(f"❌ 发送消息到KOOK请求异常: {e}")
         except Exception as e:
             print(f"❌ 发送消息到KOOK失败: {e}")
         
@@ -388,13 +395,20 @@ def setup_kook_bot(bot):
             }
             
             # 发送请求
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data) as response:
-                    if response.status == 200:
-                        print(f"✅ 消息已发送到KOOK频道 {channel_id}")
-                    else:
-                        resp_json = await response.json()
-                        print(f"❌ 发送消息到KOOK失败: {resp_json}")
+            # 使用超时设置，确保在任务内使用
+            timeout = aiohttp.ClientTimeout(total=30)  # 30秒超时
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                try:
+                    async with session.post(url, headers=headers, json=data) as response:
+                        if response.status == 200:
+                            print(f"✅ 消息已发送到KOOK频道 {channel_id}")
+                        else:
+                            resp_json = await response.json()
+                            print(f"❌ 发送消息到KOOK失败: {resp_json}")
+                except asyncio.TimeoutError:
+                    print(f"❌ 发送消息到KOOK超时")
+                except Exception as e:
+                    print(f"❌ 发送消息到KOOK请求异常: {e}")
         except Exception as e:
             print(f"❌ 发送消息到KOOK失败: {e}")
         
@@ -464,13 +478,19 @@ def setup_kook_bot(bot):
             }
             
             # 发送请求
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data) as response:
-                    if response.status == 200:
-                        print(f"✅ 帮助信息已发送到KOOK频道 {channel_id}")
-                    else:
-                        resp_json = await response.json()
-                        print(f"❌ 发送帮助信息到KOOK失败: {resp_json}")
+            timeout = aiohttp.ClientTimeout(total=30)  # 30秒超时
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                try:
+                    async with session.post(url, headers=headers, json=data) as response:
+                        if response.status == 200:
+                            print(f"✅ 帮助信息已发送到KOOK频道 {channel_id}")
+                        else:
+                            resp_json = await response.json()
+                            print(f"❌ 发送帮助信息到KOOK失败: {resp_json}")
+                except asyncio.TimeoutError:
+                    print(f"❌ 发送帮助信息到KOOK超时")
+                except Exception as e:
+                    print(f"❌ 发送帮助信息到KOOK请求异常: {e}")
         except Exception as e:
             print(f"❌ 发送帮助信息到KOOK失败: {e}")
         

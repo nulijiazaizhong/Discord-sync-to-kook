@@ -348,12 +348,18 @@ class Translator:
         self.target_language = os.getenv('TRANSLATION_TARGET_LANGUAGE', 'zh-CN')
         self.source_language = os.getenv('TRANSLATION_SOURCE_LANGUAGE', 'auto')
         
+        # 初始化白名单
+        whitelist_str = os.getenv('TRANSLATION_WHITELIST', '')
+        self.whitelist = [item.strip() for item in whitelist_str.split(',') if item.strip()]
+        
         # 初始化翻译服务
         self.service = self._create_service()
         
         # 打印翻译器状态
         if self.enabled:
             print(f"✅ 翻译功能已启用 - 服务类型: {self.service_type}, 目标语言: {self.target_language}")
+            if self.whitelist:
+                print(f"✅ 翻译白名单已设置: {', '.join(self.whitelist)}")
         else:
             print("❌ 翻译功能已禁用")
     
@@ -381,8 +387,82 @@ class Translator:
         """
         return self.enabled and self.service is not None
         
+    def _contains_code_block(self, text: str) -> bool:
+        """检查文本是否包含代码块
+        
+        Args:
+            text: 要检查的文本
+            
+        Returns:
+            bool: 是否包含代码块
+        """
+        # 检查是否包含Markdown代码块标记 ```
+        return "```" in text
+        
+    def _split_text_and_code_blocks(self, text: str):
+        """将文本分割为普通文本和代码块
+        
+        Args:
+            text: 要分割的文本
+            
+        Returns:
+            list: 包含文本片段和类型的列表，类型为"text"或"code"
+        """
+        parts = []
+        is_in_code_block = False
+        current_part = ""
+        
+        # 按行分割文本
+        lines = text.split('\n')
+        
+        for line in lines:
+            # 检查是否是代码块开始或结束标记
+            if line.strip().startswith("```") or line.strip() == "```":
+                # 保存当前部分
+                if current_part:
+                    parts.append({
+                        "type": "code" if is_in_code_block else "text",
+                        "content": current_part
+                    })
+                    current_part = ""
+                
+                # 切换代码块状态
+                is_in_code_block = not is_in_code_block
+                
+                # 添加当前行（代码块标记）
+                current_part += line + "\n"
+            else:
+                # 添加普通行
+                current_part += line + "\n"
+        
+        # 添加最后一部分
+        if current_part:
+            parts.append({
+                "type": "code" if is_in_code_block else "text",
+                "content": current_part
+            })
+        
+        return parts
+    
+    def _should_skip_translation(self, text: str) -> bool:
+        """检查文本是否应该跳过翻译（在白名单中）
+        
+        Args:
+            text: 要检查的文本
+            
+        Returns:
+            bool: 是否应该跳过翻译
+        """
+        if not self.whitelist:
+            return False
+            
+        for whitelist_item in self.whitelist:
+            if whitelist_item in text:
+                return True
+        return False
+    
     async def translate_text(self, text: str) -> str:
-        """翻译文本
+        """翻译文本，跳过代码块和白名单内容
         
         Args:
             text: 要翻译的文本
@@ -393,8 +473,37 @@ class Translator:
         if not self.is_enabled() or not text.strip():
             return text
             
+        # 检查是否在白名单中
+        if self._should_skip_translation(text):
+            return text
+        
+        # 如果不包含代码块，直接翻译整个文本
+        if not self._contains_code_block(text):
+            try:
+                return await self.service.translate(text)
+            except Exception as e:
+                print(f"❌ 翻译过程中出错: {e}")
+                return text
+        
+        # 包含代码块，分割处理
         try:
-            return await self.service.translate(text)
+            parts = self._split_text_and_code_blocks(text)
+            result = ""
+            
+            for part in parts:
+                if part["type"] == "text" and part["content"].strip():
+                    # 检查文本部分是否在白名单中
+                    if self._should_skip_translation(part["content"]):
+                        result += part["content"]
+                    else:
+                        # 只翻译非代码块且不在白名单中的部分
+                        translated = await self.service.translate(part["content"])
+                        result += translated
+                else:
+                    # 代码块部分保持原样
+                    result += part["content"]
+            
+            return result
         except Exception as e:
-            print(f"❌ 翻译过程中出错: {e}")
+            print(f"❌ 处理代码块翻译过程中出错: {e}")
             return text
