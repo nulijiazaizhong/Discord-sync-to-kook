@@ -29,6 +29,7 @@ def setup_discord_bot(bot, token, kook_bot=None):
     
     # 初始化消息转发器
     forwarder = None
+    enable_hello_reply = os.getenv('DISCORD_HELLO_REPLY_ENABLED', 'true').lower() == 'true'
     if kook_bot:
         forwarder = MessageForwarder(kook_bot)
         print("✅ 消息转发器已初始化")
@@ -190,7 +191,7 @@ def setup_discord_bot(bot, token, kook_bot=None):
                 print(f"❌ 转发消息时出错: {e}")
         
         # 如果消息内容是"hello"，机器人回复（只对非机器人用户）
-        if message.content.lower() == 'hello' and not message.author.bot:
+        if enable_hello_reply and message.content.lower() == 'hello' and not message.author.bot:
             await message.channel.send(f'你好, {message.author.mention}！')
         
         # 处理命令
